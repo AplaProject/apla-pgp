@@ -29,7 +29,6 @@
 package main
 
 import (
-	"fmt"
 	"io/ioutil"
 	"log"
 	"os"
@@ -107,12 +106,14 @@ func main() {
 		for _, block := range blocks {
 			ProcessBlock(block)
 		}
-		fmt.Println(`Last`, LastID())
 	}
 	chBlock := make(chan int)
 	for {
 		time.AfterFunc(time.Duration(cfg.Settings.Timeout)*time.Second, func() {
-			fmt.Println(`Get block`)
+			blocks := GetBlocks()
+			for _, block := range blocks {
+				ProcessBlock(block)
+			}
 			chBlock <- 1
 		})
 		<-chBlock

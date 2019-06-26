@@ -65,3 +65,12 @@ func StoreBlock(block BlockInfo) {
 	store.Set(block.ID, block.Hash)
 	store.Set(lastId, block.ID)
 }
+
+func GetHash(id int64) []byte {
+	var hash []byte
+	err := store.Get(id, &hash)
+	if err != nil {
+		logger.Fatal(err)
+	}
+	return hash
+}

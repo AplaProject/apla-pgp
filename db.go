@@ -29,6 +29,7 @@
 package main
 
 import (
+	"bytes"
 	"database/sql"
 	"fmt"
 
@@ -70,6 +71,7 @@ func GetLastBlock() (id int64) {
 	if err != nil {
 		logger.Error(err)
 	}
+	defer rows.Close()
 	if rows.Next() {
 		rows.Scan(&id)
 	}
@@ -83,11 +85,61 @@ func LoadBlocks(offset int64) []BlockInfo {
 	if err != nil {
 		logger.Fatal(err)
 	}
-
+	defer rows.Close()
 	for rows.Next() {
 		var block BlockInfo
 		rows.Scan(&block.ID, &block.Hash, &block.Data)
 		ret = append(ret, block)
+	}
+	return ret
+}
+
+func GetBlocks() []BlockInfo {
+	ret := make([]BlockInfo, 0, 25)
+	for {
+		offset := LastID()
+		rows, err := db.Query(`SELECT id, hash, data FROM "block_chain" WHERE id >= $1 order by id`,
+			offset)
+		if err != nil {
+			logger.Fatal(err)
+		}
+		for rows.Next() {
+			var (
+				block BlockInfo
+			)
+			rows.Scan(&block.ID, &block.Hash, &block.Data)
+			if block.ID == offset {
+				if !bytes.Equal(block.Hash, GetHash(offset)) { // Rollback has been detected
+					fmt.Println(`Rollback has been detected`)
+					rows.Close()
+					offset -= 10
+					if offset < 0 {
+						offset = 1
+					}
+					prev, err := db.Query(`SELECT id, hash FROM "block_chain" WHERE id >= $1 order by id     limit 10`,
+						offset)
+					if err != nil {
+						logger.Fatal(err)
+					}
+					for prev.Next() {
+						var (
+							id   int64
+							hash []byte
+						)
+						prev.Scan(&id, &hash)
+						if bytes.Equal(hash, GetHash(id)) {
+							offset = id
+						} else {
+							break
+						}
+					}
+					store.Set(lastId, offset)
+					prev.Close()
+					break
+				}
+			}
+			ret = append(ret, block)
+		}
 	}
 	return ret
 }
