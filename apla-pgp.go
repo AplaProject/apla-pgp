@@ -29,6 +29,7 @@
 package main
 
 import (
+	"fmt"
 	"io/ioutil"
 	"log"
 	"os"
@@ -37,9 +38,25 @@ import (
 	"github.com/google/logger"
 )
 
+type DBConfig struct {
+	Name     string
+	Host     string // ipaddr, hostname, or "0.0.0.0"
+	Port     int    // must be in range 1..65535
+	User     string
+	Password string
+}
+
+type PGPConfig struct {
+	Path   string
+	Phrase string // phrase for private key
+}
+
 type Config struct {
-	PGPPath string
-	LogFile string
+	PGP       PGPConfig
+	LogFile   string
+	StoreFile string
+	OutPath   string
+	DB        DBConfig
 }
 
 const (
@@ -70,6 +87,20 @@ func main() {
 	defer logger.Init("apla-pgp", false, false, lf).Close()
 	logger.SetFlags(log.LstdFlags)
 	logger.Info(`Start`)
+	logger.Info(`Read PGP keys: `, ReadPGPKeys())
+	logger.Info(`Connect DB: `, DBOpen())
+	defer DBClose()
+	StoreOpen()
+	defer StoreClose()
+
+	logger.Info(`Last`, LastID(), GetLastBlock())
+	for LastID() < GetLastBlock() {
+		blocks := LoadBlocks(LastID())
+		for _, block := range blocks {
+			ProcessBlock(block)
+		}
+		fmt.Println(`Last`, LastID())
+	}
 	/*	encStr, err := encTest(mySecretString)
 		if err != nil {
 			log.Fatal(err)
