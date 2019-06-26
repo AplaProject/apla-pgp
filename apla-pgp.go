@@ -33,6 +33,7 @@ import (
 	"io/ioutil"
 	"log"
 	"os"
+	"time"
 
 	"github.com/BurntSushi/toml"
 	"github.com/google/logger"
@@ -51,11 +52,17 @@ type PGPConfig struct {
 	Phrase string // phrase for private key
 }
 
+type SettingsConfig struct {
+	Timeout        int
+	NodePrivateKey string
+}
+
 type Config struct {
-	PGP       PGPConfig
 	LogFile   string
 	StoreFile string
 	OutPath   string
+	Settings  SettingsConfig
+	PGP       PGPConfig
 	DB        DBConfig
 }
 
@@ -88,12 +95,13 @@ func main() {
 	logger.SetFlags(log.LstdFlags)
 	logger.Info(`Start`)
 	logger.Info(`Read PGP keys: `, ReadPGPKeys())
+	InitNodeKey()
 	logger.Info(`Connect DB: `, DBOpen())
 	defer DBClose()
 	StoreOpen()
 	defer StoreClose()
 
-	logger.Info(`Last`, LastID(), GetLastBlock())
+	logger.Info(`Previous state: `, LastID(), GetLastBlock())
 	for LastID() < GetLastBlock() {
 		blocks := LoadBlocks(LastID())
 		for _, block := range blocks {
@@ -101,16 +109,13 @@ func main() {
 		}
 		fmt.Println(`Last`, LastID())
 	}
-	/*	encStr, err := encTest(mySecretString)
-		if err != nil {
-			log.Fatal(err)
-		}
-		log.Println("Decrypted Secret:", len(encStr))
-		decStr, err := decTest(encStr)
-		if err != nil {
-			log.Fatal(err)
-		}
-		// should be done
-		log.Println("Decrypted Secret:", len(decStr))*/
+	chBlock := make(chan int)
+	for {
+		time.AfterFunc(time.Duration(cfg.Settings.Timeout)*time.Second, func() {
+			fmt.Println(`Get block`)
+			chBlock <- 1
+		})
+		<-chBlock
+	}
 	logger.Info(`Finish`)
 }

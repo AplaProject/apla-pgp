@@ -29,11 +29,17 @@
 package main
 
 import (
+	"bytes"
+	"io/ioutil"
 	"os"
 
 	"github.com/google/logger"
 	"golang.org/x/crypto/openpgp"
 )
+
+// create gpg keys with
+// $ gpg --gen-key
+// ensure you correct paths and passphrase
 
 var (
 	PGPPrivate openpgp.EntityList
@@ -63,18 +69,17 @@ func ReadPGPKeys() (out string) {
 	privKey := cfg.PGP.Path + `/secring.gpg`
 	if FileExists(privKey) {
 		var entity *openpgp.Entity
-		var entityList openpgp.EntityList
 
 		keyringPrivFile, err := os.Open(privKey)
 		if err != nil {
 			logger.Fatal(err)
 		}
 		defer keyringPrivFile.Close()
-		entityList, err = openpgp.ReadKeyRing(keyringPrivFile)
+		PGPPrivate, err = openpgp.ReadKeyRing(keyringPrivFile)
 		if err != nil {
 			logger.Fatal(err)
 		}
-		entity = entityList[0]
+		entity = PGPPrivate[0]
 
 		passphraseByte := []byte(cfg.PGP.Phrase)
 		entity.PrivateKey.Decrypt(passphraseByte)
@@ -82,6 +87,34 @@ func ReadPGPKeys() (out string) {
 			subkey.PrivateKey.Decrypt(passphraseByte)
 		}
 		out += ` & Private`
+	}
+	return out
+}
+
+func PGPEncode(in []byte) []byte {
+	buf := new(bytes.Buffer)
+	w, err := openpgp.Encrypt(buf, PGPPublic, nil, nil, nil)
+	if err != nil {
+		logger.Fatal(err)
+	}
+	_, err = w.Write(in)
+	if err != nil {
+		logger.Fatal(err)
+	}
+	if err = w.Close(); err != nil {
+		logger.Fatal(err)
+	}
+	return buf.Bytes()
+}
+
+func PGPDecode(in []byte) []byte {
+	md, err := openpgp.ReadMessage(bytes.NewBuffer(in), PGPPrivate, nil, nil)
+	if err != nil {
+		logger.Fatal(err)
+	}
+	out, err := ioutil.ReadAll(md.UnverifiedBody)
+	if err != nil {
+		logger.Fatal(err)
 	}
 	return out
 }

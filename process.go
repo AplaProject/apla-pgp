@@ -29,7 +29,9 @@
 package main
 
 import (
+	"bytes"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"io/ioutil"
 	"path/filepath"
@@ -39,25 +41,63 @@ import (
 )
 
 type BlockMsg struct {
-	ID   int64
-	Hash []byte
-	Body []byte
+	ID        int64
+	Signature []byte
+	Hash      []byte
+	Body      []byte
 }
 
 func ProcessBlock(block BlockInfo) {
+	var (
+		sign []byte
+		err  error
+	)
+
+	body := PGPEncode(block.Data)
+	sign, err = SignECDSA(append([]byte(fmt.Sprintf("%d%x", block.ID, block.Hash)), body...))
+	if err != nil {
+		logger.Fatal(err)
+	}
 	msg := BlockMsg{
-		ID:   block.ID,
-		Hash: block.Hash,
-		Body: block.Data,
+		ID:        block.ID,
+		Hash:      block.Hash,
+		Signature: sign,
+		Body:      body,
 	}
 	out, err := msgpack.Marshal(msg)
 	if err != nil {
 		logger.Fatal(err, block.ID)
 	}
-	if err = ioutil.WriteFile(filepath.Join(cfg.OutPath, fmt.Sprintf(`%d.block`, block.ID)),
-		out, 0644); err != nil {
+	fname := filepath.Join(cfg.OutPath, fmt.Sprintf(`%d.block`, block.ID))
+	if err = ioutil.WriteFile(fname, out, 0644); err != nil {
 		logger.Fatal(err, block.ID)
 	}
 	StoreBlock(block)
 	logger.Info(fmt.Sprintf(`Processed: %d %s`, block.ID, hex.EncodeToString(block.Hash)))
+	if PGPPrivate != nil { // Verify
+		var (
+			verify   []byte
+			checkMsg BlockMsg
+		)
+		if verify, err = ioutil.ReadFile(fname); err != nil {
+			logger.Fatal(err)
+		}
+		err := msgpack.Unmarshal(verify, &checkMsg)
+		if err != nil {
+			logger.Fatal(err)
+		}
+		ok, err := CheckECDSA(append([]byte(fmt.Sprintf("%d%x", checkMsg.ID, checkMsg.Hash)),
+			checkMsg.Body...), checkMsg.Signature)
+		if err != nil || !ok {
+			logger.Fatal(`Verifying signature: `, ok, err)
+		}
+		checkMsg.Body = PGPDecode(checkMsg.Body)
+		if checkMsg.ID != block.ID || !bytes.Equal(checkMsg.Hash, block.Hash) {
+			logger.Fatal(checkMsg.ID, checkMsg.Hash)
+		}
+		if !bytes.Equal(checkMsg.Body, block.Data) {
+			logger.Fatal(errors.New(`Block data is different`))
+		}
+		logger.Info(`Verified: OK`)
+	}
 }
