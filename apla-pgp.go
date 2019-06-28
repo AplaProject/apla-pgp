@@ -53,6 +53,7 @@ type PGPConfig struct {
 
 type SettingsConfig struct {
 	Timeout        int
+	Compression    int64
 	NodePrivateKey string
 }
 
@@ -112,7 +113,9 @@ func main() {
 		time.AfterFunc(time.Duration(cfg.Settings.Timeout)*time.Second, func() {
 			blocks := GetBlocks()
 			for _, block := range blocks {
-				ProcessBlock(block)
+				if LastID() < block.ID {
+					ProcessBlock(block)
+				}
 			}
 			chBlock <- 1
 		})

@@ -96,6 +96,7 @@ func LoadBlocks(offset int64) []BlockInfo {
 
 func GetBlocks() []BlockInfo {
 	ret := make([]BlockInfo, 0, 25)
+main:
 	for {
 		offset := LastID()
 		rows, err := db.Query(`SELECT id, hash, data FROM "block_chain" WHERE id >= $1 order by id`,
@@ -110,11 +111,10 @@ func GetBlocks() []BlockInfo {
 			rows.Scan(&block.ID, &block.Hash, &block.Data)
 			if block.ID == offset {
 				if !bytes.Equal(block.Hash, GetHash(offset)) { // Rollback has been detected
-					fmt.Println(`Rollback has been detected`)
 					rows.Close()
 					offset -= 10
 					if offset < 0 {
-						offset = 1
+						offset = 0
 					}
 					prev, err := db.Query(`SELECT id, hash FROM "block_chain" WHERE id >= $1 order by id     limit 10`,
 						offset)
@@ -135,11 +135,12 @@ func GetBlocks() []BlockInfo {
 					}
 					store.Set(lastId, offset)
 					prev.Close()
-					break
+					continue main
 				}
 			}
 			ret = append(ret, block)
 		}
+		break
 	}
 	return ret
 }

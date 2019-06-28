@@ -41,28 +41,40 @@ import (
 )
 
 type BlockMsg struct {
-	ID        int64
-	Signature []byte
-	Hash      []byte
-	Body      []byte
+	ID          int64
+	Compression int64
+	Signature   []byte
+	Hash        []byte
+	Body        []byte
 }
 
 func ProcessBlock(block BlockInfo) {
 	var (
-		sign []byte
-		err  error
+		sign, body []byte
+		err        error
+		idCompress int64
 	)
-
-	body := PGPEncode(block.Data)
+	if cfg.Settings.Compression != COMPRESS_NONE && len(block.Data) > 1024 {
+		body = Compression(block.Data)
+		if len(body) >= len(block.Data) {
+			body = block.Data
+		} else {
+			idCompress = cfg.Settings.Compression
+		}
+	} else {
+		body = block.Data
+	}
+	body = PGPEncode(body)
 	sign, err = SignECDSA(append([]byte(fmt.Sprintf("%d%x", block.ID, block.Hash)), body...))
 	if err != nil {
 		logger.Fatal(err)
 	}
 	msg := BlockMsg{
-		ID:        block.ID,
-		Hash:      block.Hash,
-		Signature: sign,
-		Body:      body,
+		ID:          block.ID,
+		Compression: idCompress,
+		Hash:        block.Hash,
+		Signature:   sign,
+		Body:        body,
 	}
 	out, err := msgpack.Marshal(msg)
 	if err != nil {
@@ -94,6 +106,9 @@ func ProcessBlock(block BlockInfo) {
 		checkMsg.Body = PGPDecode(checkMsg.Body)
 		if checkMsg.ID != block.ID || !bytes.Equal(checkMsg.Hash, block.Hash) {
 			logger.Fatal(checkMsg.ID, checkMsg.Hash)
+		}
+		if checkMsg.Compression != COMPRESS_NONE {
+			checkMsg.Body = Decompression(checkMsg.Compression, checkMsg.Body)
 		}
 		if !bytes.Equal(checkMsg.Body, block.Data) {
 			logger.Fatal(errors.New(`Block data is different`))
