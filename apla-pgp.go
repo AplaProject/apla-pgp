@@ -38,17 +38,13 @@ import (
 	"github.com/google/logger"
 )
 
-type DBConfig struct {
-	Name     string
-	Host     string // ipaddr, hostname, or "0.0.0.0"
-	Port     int    // must be in range 1..65535
-	User     string
-	Password string
-}
-
 type PGPConfig struct {
 	Path   string
 	Phrase string // phrase for private key
+}
+
+type TCPConfig struct {
+	Host string
 }
 
 type SettingsConfig struct {
@@ -63,7 +59,13 @@ type Config struct {
 	OutPath   string
 	Settings  SettingsConfig
 	PGP       PGPConfig
-	DB        DBConfig
+	TCP       TCPConfig
+}
+
+type BlockInfo struct {
+	ID   int64
+	Hash []byte
+	Data []byte
 }
 
 const (
@@ -96,30 +98,23 @@ func main() {
 	logger.Info(`Start`)
 	logger.Info(`Read PGP keys: `, ReadPGPKeys())
 	InitNodeKey()
-	logger.Info(`Connect DB: `, DBOpen())
-	defer DBClose()
 	StoreOpen()
 	defer StoreClose()
-
 	logger.Info(`Previous state: `, LastID(), GetLastBlock())
 	for LastID() < GetLastBlock() {
-		blocks := LoadBlocks(LastID())
-		for _, block := range blocks {
-			ProcessBlock(block)
-		}
+		TCPLoadBlocks()
 	}
 	chBlock := make(chan int)
 	for {
 		time.AfterFunc(time.Duration(cfg.Settings.Timeout)*time.Second, func() {
-			blocks := GetBlocks()
-			for _, block := range blocks {
-				if LastID() < block.ID {
-					ProcessBlock(block)
-				}
+			maxBlock := GetLastBlock()
+			if maxBlock > LastID() {
+				TCPLoadBlocks()
+			} else if maxBlock < LastID() {
+				store.Set(lastId, maxBlock)
 			}
 			chBlock <- 1
 		})
 		<-chBlock
 	}
-	logger.Info(`Finish`)
 }
