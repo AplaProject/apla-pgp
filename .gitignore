@@ -1,0 +1,18 @@
+.directory
+
+### Go template
+# Compiled Object files, Static and Dynamic libs (Shared Objects)
+*.o
+*.a
+*.so
+
+# Thumbnails
+._*
+
+apla-pgp
+apla.log
+
+packages/static/
+public/
+backup/
+store/
