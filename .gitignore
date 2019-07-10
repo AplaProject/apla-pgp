@@ -11,6 +11,7 @@
 
 apla-pgp
 apla.log
+apla-pgp.conf
 
 packages/static/
 public/
